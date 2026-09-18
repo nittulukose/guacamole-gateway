@@ -1,0 +1,94 @@
+# ============================================================
+# Organizational Units
+# ============================================================
+dn: ou=people,dc=hcltech,dc=com
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=hcltech,dc=com
+objectClass: organizationalUnit
+ou: groups
+
+# ============================================================
+# Users
+#   NOTE: userPassword is stored as cleartext here purely for
+#   local-lab convenience. For anything beyond a playground,
+#   seed with a pre-hashed {SSHA} value instead.
+# ============================================================
+dn: uid=bob,ou=people,dc=hcltech,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: bob
+cn: Bob
+sn: Bob
+givenName: Bob
+displayName: Bob
+mail: bob@hcltech.com
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /home/bob
+loginShell: /bin/bash
+userPassword: BobPass123!
+
+dn: uid=alice,ou=people,dc=hcltech,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: alice
+cn: Alice
+sn: Alice
+givenName: Alice
+displayName: Alice
+mail: alice@hcltech.com
+uidNumber: 10002
+gidNumber: 10002
+homeDirectory: /home/alice
+loginShell: /bin/bash
+userPassword: AlicePass123!
+
+# ============================================================
+# Groups
+#   groupOfNames requires at least one "member" DN, which is
+#   exactly what Guacamole's LDAP module will read back as
+#   this user's group membership (LDAP_MEMBER_ATTRIBUTE=member,
+#   LDAP_MEMBER_ATTRIBUTE_TYPE=dn).
+# ============================================================
+dn: cn=ssh-users,ou=groups,dc=hcltech,dc=com
+objectClass: groupOfNames
+cn: ssh-users
+description: SSH Users
+member: uid=bob,ou=people,dc=hcltech,dc=com
+
+dn: cn=desktop-users,ou=groups,dc=hcltech,dc=com
+objectClass: groupOfNames
+cn: desktop-users
+description: Desktop Users
+member: uid=alice,ou=people,dc=hcltech,dc=com
+
+
+# ============================================================
+# Guacamole Administrators
+# ============================================================
+
+dn: uid=guacadmin,ou=people,dc=hcltech,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: guacadmin
+cn: Guacamole Administrator
+sn: Administrator
+givenName: Guacamole
+displayName: Guacamole Administrator
+mail: guacadmin@hcltech.com
+uidNumber: 10003
+gidNumber: 10003
+homeDirectory: /home/guacadmin
+loginShell: /bin/bash
+userPassword: GuacAdminPass123!
+
+dn: cn=guac-admins,ou=groups,dc=hcltech,dc=com
+objectClass: groupOfNames
+cn: guac-admins
+description: Guacamole Administrators
+member: uid=guacadmin,ou=people,dc=hcltech,dc=com

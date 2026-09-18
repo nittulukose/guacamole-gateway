@@ -1,0 +1,201 @@
+services:
+
+  # ------------------------------------------------------------------
+  # Directory: source of truth for USERS, GROUPS and AUTHENTICATION
+  # into the Guacamole portal. No target-machine credentials live here.
+  # ------------------------------------------------------------------
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: ${LDAP_ORG}
+      LDAP_DOMAIN: ${LDAP_DOMAIN}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      LDAP_CONFIG_PASSWORD: ${LDAP_CONFIG_PASSWORD}
+      LDAP_SEED_INTERNAL_LDIF_PATH: /ldifs
+    volumes:
+      - ./ldap:/ldifs:ro
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+    networks: [guacnet]
+
+  ldap-acl:
+    image: osixia/openldap:1.5.0
+    container_name: ldap-acl
+    depends_on:
+      - openldap
+    environment:
+      LDAP_CONFIG_PASSWORD: ${LDAP_CONFIG_PASSWORD}
+    volumes:
+      - ./ldap/acl.ldif:/tmp/acl.ldif:ro
+    networks: [guacnet]
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
+      set -e
+
+      echo "Waiting for OpenLDAP..."
+
+      until ldapsearch -x \
+        -H ldap://openldap:389 \
+        -D "cn=admin,cn=config" \
+        -w "$${LDAP_CONFIG_PASSWORD}" \
+        -b "cn=config" \
+        -s base dn >/dev/null 2>&1
+      do
+        sleep 2
+      done
+
+      echo "OpenLDAP is ready."
+      echo "Applying ACL..."
+
+      ldapmodify -x \
+        -H ldap://openldap:389 \
+        -D "cn=admin,cn=config" \
+        -w "$${LDAP_CONFIG_PASSWORD}" \
+        -f /tmp/acl.ldif
+
+      echo "ACL applied."
+
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: phpldapadmin
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: openldap
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8081:80"
+    depends_on: [openldap]
+    networks: [guacnet]
+
+  # ------------------------------------------------------------------
+  # Guacamole's own remote-desktop proxy daemon
+  # ------------------------------------------------------------------
+  guacd:
+    image: guacamole/guacd:1.5.5
+    container_name: guacd
+    networks: [guacnet]
+
+  # ------------------------------------------------------------------
+  # Authorization store: connections, groups, permissions.
+  # Authentication is NOT done here - LDAP handles that.
+  # ------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: guac-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - guac-db-init:/docker-entrypoint-initdb.d
+      - ./guac-db-init/02-groups-and-connections.sql:/docker-entrypoint-initdb.d/02-groups-and-connections.sql:ro
+      - postgres-data:/var/lib/postgresql/data
+    depends_on:
+      schema-generator:
+        condition: service_completed_successfully
+    networks: [guacnet]
+
+  # One-shot job: dumps the official Guacamole PostgreSQL schema into
+  # the guac-db-init volume as 01-schema.sql before Postgres starts.
+  # See guac-db-init/README.md.
+  #schema-generator:
+  #  image: guacamole/guacamole:1.5.5
+  #  container_name: guac-schema-generator
+  #  entrypoint: ["/bin/sh", "-c"]
+  #  command: ["/opt/guacamole/bin/initdb.sh --postgresql > /init-db/01-schema.sql"]
+  #  volumes:
+  #    - guac-db-init:/init-db
+  #  networks: [guacnet]
+
+  schema-generator:
+    image: guacamole/guacamole:1.5.5
+    container_name: guac-schema-generator
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        /opt/guacamole/bin/initdb.sh --postgresql > /init-db/01-schema.sql
+        chmod 644 /init-db/01-schema.sql
+        echo "Guacamole PostgreSQL schema generated successfully."
+    volumes:
+      - guac-db-init:/init-db
+    networks:
+      - guacnet
+
+
+  # ------------------------------------------------------------------
+  # The portal itself: authenticates against LDAP, authorizes/maps
+  # connections from Postgres, keyed off LDAP group membership.
+  # ------------------------------------------------------------------
+  guacamole:
+    image: guacamole/guacamole:1.5.5
+    container_name: guacamole
+    environment:
+      GUACD_HOSTNAME: guacd
+      GUACD_PORT: 4822
+
+      POSTGRESQL_HOSTNAME: postgres
+      POSTGRESQL_DATABASE: ${POSTGRES_DB}
+      POSTGRESQL_USER: ${POSTGRES_USER}
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD}
+
+      LDAP_HOSTNAME: openldap
+      LDAP_PORT: 389
+      LDAP_ENCRYPTION_METHOD: none
+      LDAP_USER_BASE_DN: ou=people,dc=hcltech,dc=com
+      LDAP_USERNAME_ATTRIBUTE: uid
+      LDAP_SEARCH_BIND_DN: cn=admin,dc=hcltech,dc=com
+      LDAP_SEARCH_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      LDAP_GROUP_BASE_DN: ou=groups,dc=hcltech,dc=com
+      LDAP_GROUP_NAME_ATTRIBUTE: cn
+      LDAP_MEMBER_ATTRIBUTE: member
+      LDAP_MEMBER_ATTRIBUTE_TYPE: dn
+    depends_on:
+      - guacd
+      - postgres
+      - openldap
+    ports:
+      - "3000:8080"
+    networks: [guacnet]
+
+  # ------------------------------------------------------------------
+  # Target machines
+  # ------------------------------------------------------------------
+  target-ssh-1:
+    build:
+      context: ./targets/ssh-server
+      args:
+        NPA_USERNAME: ${NPA_SSH_USERNAME}
+        NPA_PASSWORD: ${NPA_SSH_PASSWORD}
+    container_name: target-ssh-1
+    networks: [guacnet]
+
+  target-ssh-2:
+    build:
+      context: ./targets/ssh-server
+      args:
+        NPA_USERNAME: ${NPA_SSH_USERNAME}
+        NPA_PASSWORD: ${NPA_SSH_PASSWORD}
+    container_name: target-ssh-2
+    networks: [guacnet]
+
+  target-desktop:
+    build:
+      context: ./targets/desktop
+      args:
+        NPA_USERNAME: ${NPA_RDP_USERNAME}
+        NPA_PASSWORD: ${NPA_RDP_PASSWORD}
+    container_name: target-desktop
+    networks: [guacnet]
+
+networks:
+  guacnet:
+    driver: bridge
+
+volumes:
+  ldap-data:
+  ldap-config:
+  postgres-data:
+  guac-db-init:
