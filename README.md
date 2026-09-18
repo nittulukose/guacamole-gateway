@@ -78,12 +78,12 @@ First boot does two things automatically before Guacamole is reachable:
 
 **http://localhost:3000/guacamole**.
 
-- Log in as `guacadmin` / `GuacAdminPass123!` → ** Gaucamole Administration **
+- Log in as `guacadmin` / `CHECK .env for password` → ** Gaucamole Administration **
 
-- Log in as `bob` / `BobPass123!` → sees **Linux Server 1 (SSH)** and
+- Log in as `bob` / `CHECK .env for password` → sees **Linux Server 1 (SSH)** and
   **Linux Server 2 (SSH)** only.
 
-- Log in as `alice` / `AlicePass123!` → sees **Linux Desktop (RDP)** only.
+- Log in as `alice` / `CHECK .env for password` → sees **Linux Desktop (RDP)** only.
 
 
 
@@ -91,4 +91,4 @@ First boot does two things automatically before Guacamole is reachable:
 
 **http://localhost:8081**.
 
-- Log in as `cn=admin,cn=config` / `LdapConfig123!` → sees ** Users and Groups Management **
+- Log in as `cn=admin,cn=config` / `CHECK .env for password` → sees ** Users and Groups Management **
